@@ -84,6 +84,87 @@ class SSA(EquationBase): #{{{
     
         return [f1, f2] #}}}
 
+class SSAScaledEquationParameter(EquationParameter, Constants):
+    """ default parameters for SSA scaled by driving stress
+    """
+    _EQUATION_TYPE = 'SSA Scaled' 
+    def __init__(self, param_dict={}):
+        # load necessary constants
+        Constants.__init__(self)
+        super().__init__(param_dict)
+
+    def set_default(self):
+        self.input = ['x', 'y']
+        self.output = ['u', 'v', 's', 'H', 'C']
+        self.output_lb = [-1.0e4/self.yts, -1.0e4/self.yts, -1.0e3, 10.0, 0.01]
+        self.output_ub = [ 1.0e4/self.yts,  1.0e4/self.yts,  2.5e3, 2000.0, 1.0e4]
+        self.data_weights = [1.0e-8*self.yts**2.0, 1.0e-8*self.yts**2.0, 1.0e-6, 1.0e-6, 1.0e-8]
+        self.residuals = ["fSSA1", "fSSA2"]
+        self.pde_weights = [1.0, 1.0]
+
+        # scalar variables: name:value
+        self.scalar_variables = {
+                'n': 3.0,               # exponent of Glen's flow law
+                'B':1.26802073401e+08   # -8 degree C, cuffey
+                }
+class SSAScaled(EquationBase): #{{{
+    """ SSA on 2D problem with uniform B, residual is scaled by the driving stress
+    """
+    _EQUATION_TYPE = 'SSA Scaled' 
+    def __init__(self, parameters=SSAEquationParameter()):
+        super().__init__(parameters)
+
+    def pde(self, nn_input_var, nn_output_var):
+        """ residual of SSA 2D PDEs, scaled by the driving stress
+
+        Args:
+            nn_input_var: global input to the nn
+            nn_output_var: global output from the nn
+        """
+        # get the ids
+        xid = self.local_input_var["x"]
+        yid = self.local_input_var["y"]
+
+        uid = self.local_output_var["u"]
+        vid = self.local_output_var["v"]
+        sid = self.local_output_var["s"]
+        Hid = self.local_output_var["H"]
+        Cid = self.local_output_var["C"]
+
+        # unpacking normalized output
+        u, v, H, C = nn_output_var[:, uid:uid+1], nn_output_var[:, vid:vid+1], nn_output_var[:, Hid:Hid+1], nn_output_var[:, Cid:Cid+1]
+    
+        # spatial derivatives
+        u_x = dde.grad.jacobian(nn_output_var, nn_input_var, i=uid, j=xid)
+        v_x = dde.grad.jacobian(nn_output_var, nn_input_var, i=vid, j=xid)
+        s_x = dde.grad.jacobian(nn_output_var, nn_input_var, i=sid, j=xid)
+        u_y = dde.grad.jacobian(nn_output_var, nn_input_var, i=uid, j=yid)
+        v_y = dde.grad.jacobian(nn_output_var, nn_input_var, i=vid, j=yid)
+        s_y = dde.grad.jacobian(nn_output_var, nn_input_var, i=sid, j=yid)
+    
+        eta = 0.5*self.B *(u_x**2.0 + v_y**2.0 + 0.25*(u_y+v_x)**2.0 + u_x*v_y+1.0e-15)**(0.5*(1.0-self.n)/self.n)
+        # stress tensor
+        etaH = eta * H
+        B11 = etaH*(4*u_x + 2*v_y)
+        B22 = etaH*(4*v_y + 2*u_x)
+        B12 = etaH*(  u_y +   v_x)
+    
+        # Getting the other derivatives
+        sigma11 = dde.grad.jacobian(B11, nn_input_var, i=0, j=xid)
+        sigma12 = dde.grad.jacobian(B12, nn_input_var, i=0, j=yid)
+    
+        sigma21 = dde.grad.jacobian(B12, nn_input_var, i=0, j=xid)
+        sigma22 = dde.grad.jacobian(B22, nn_input_var, i=0, j=yid)
+    
+        # compute the basal stress
+        u_norm = (u**2+v**2)**0.5
+        alpha = C**2 * (u_norm)**(1.0/self.n)
+    
+        f1 = (sigma11 + sigma12 - alpha*u/(u_norm+1.0e-30)) / (self.rhoi*self.g*H*s_x+1.0e-30) - 1.0
+        f2 = (sigma21 + sigma22 - alpha*v/(u_norm+1.0e-30)) / (self.rhoi*self.g*H*s_y+1.0e-30) - 1.0
+    
+        return [f1, f2] #}}}
+
 class MOLHOEquationParameter(EquationParameter, Constants):
     """ default parameters for MOLHO
     """
