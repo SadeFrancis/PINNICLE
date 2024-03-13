@@ -99,7 +99,7 @@ class SSAScaledEquationParameter(EquationParameter, Constants):
         self.output_lb = [-1.0e4/self.yts, -1.0e4/self.yts, -1.0e3, 10.0, 0.01]
         self.output_ub = [ 1.0e4/self.yts,  1.0e4/self.yts,  2.5e3, 2000.0, 1.0e4]
         self.data_weights = [1.0e-8*self.yts**2.0, 1.0e-8*self.yts**2.0, 1.0e-6, 1.0e-6, 1.0e-8]
-        self.residuals = ["fSSA1", "fSSA2"]
+        self.residuals = ["fSSA1 scaled", "fSSA2 scaled"]
         self.pde_weights = [1.0, 1.0]
 
         # scalar variables: name:value
@@ -160,8 +160,8 @@ class SSAScaled(EquationBase): #{{{
         u_norm = (u**2+v**2)**0.5
         alpha = C**2 * (u_norm)**(1.0/self.n)
     
-        f1 = (sigma11 + sigma12 - alpha*u/(u_norm+1.0e-30)) / (self.rhoi*self.g*H*s_x+1.0e-30) - 1.0
-        f2 = (sigma21 + sigma22 - alpha*v/(u_norm+1.0e-30)) / (self.rhoi*self.g*H*s_y+1.0e-30) - 1.0
+        f1 = (sigma11 + sigma12 - alpha*u/(u_norm+1.0e-30) - self.rhoi*self.g*H*s_x) / (self.rhoi*self.g*H*s_x+1.0e-30) 
+        f2 = (sigma21 + sigma22 - alpha*v/(u_norm+1.0e-30) - self.rhoi*self.g*H*s_y) / (self.rhoi*self.g*H*s_y+1.0e-30) 
     
         return [f1, f2] #}}}
 
